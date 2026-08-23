@@ -1,0 +1,13 @@
+services:
+  b2-magnet-downloader:
+    build: .
+    image: b2-magnet-downloader:latest
+    container_name: b2-magnet-downloader
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./downloads:/app/downloads
+      - ./logs:/app/logs
+    restart: unless-stopped

@@ -1,0 +1,5 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.10.6
+b2sdk==2.8.1
+libtorrent==2.0.11

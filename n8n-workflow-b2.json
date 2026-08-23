@@ -1,0 +1,159 @@
+{
+  "name": "B2 Magnet Downloader Workflow",
+  "nodes": [
+    {
+      "id": "b2-form-trigger",
+      "name": "Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [0, 176],
+      "parameters": {
+        "formTitle": "B2 Magnet Downloader",
+        "formDescription": "Download authorized content and upload it to Backblaze B2",
+        "responseMode": "={{ \"responseNode\" }}",
+        "options": { "path": "b2-magnet-downloader" },
+        "formFields": {
+          "values": [
+            { "fieldLabel": "Magnet Link", "fieldType": "text", "requiredField": true },
+            { "fieldLabel": "Filename", "fieldType": "text", "requiredField": false },
+            {
+              "fieldLabel": "Compress to ZIP",
+              "fieldType": "dropdown",
+              "requiredField": false,
+              "defaultValue": "Yes",
+              "fieldOptions": { "values": [{ "option": "Yes" }, { "option": "No" }] }
+            },
+            { "fieldLabel": "Timeout (seconds)", "fieldType": "number", "requiredField": false, "defaultValue": "600" }
+          ]
+        }
+      },
+      "webhookId": "b2-form-trigger-webhook"
+    },
+    {
+      "id": "b2-start-download",
+      "name": "Start B2 Download",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [224, 176],
+      "parameters": {
+        "method": "POST",
+        "url": "https://b2-magnet-downloader.bluepebble-345273df.northeurope.azurecontainerapps.io/download",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"magnet_link\": $json[\"Magnet Link\"],\n  \"filename\": $json[\"Filename\"],\n  \"add_to_zip\": $json[\"Compress to ZIP\"] !== \"No\",\n  \"timeout\": Number($json[\"Timeout (seconds)\"] || 600)\n} }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b2-check-status",
+      "name": "Check B2 Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [448, 176],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://b2-magnet-downloader.bluepebble-345273df.northeurope.azurecontainerapps.io/status/{{ $(\"Start B2 Download\").item.json.job_id }}",
+        "authentication": "none",
+        "options": {}
+      }
+    },
+    {
+      "id": "b2-is-completed",
+      "name": "Is Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [672, 96],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [{ "id": "completed", "leftValue": "={{ $json.status }}", "rightValue": "completed", "operator": { "type": "string", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "b2-success-form",
+      "name": "B2 Success Form",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [896, 48],
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "showText",
+        "responseText": "=<h1>Upload Complete</h1>\n<p><strong>Job ID:</strong> {{ $json.job_id }}</p>\n<p><strong>Bucket:</strong> {{ $json.result.bucket }}</p>\n<h2>Files in Backblaze B2</h2>\n<ul>\n{{ $json.result.files.map(file => \"<li>\" + file.file_name + \" (\" + (file.size / 1048576).toFixed(2) + \" MB) - File ID: \" + file.file_id + \"</li>\").join(\"\\n\") }}\n</ul>"
+      },
+      "webhookId": "b2-success-form-webhook"
+    },
+    {
+      "id": "b2-is-failed",
+      "name": "Is Failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [896, 192],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [{ "id": "failed", "leftValue": "={{ $json.status }}", "rightValue": "failed", "operator": { "type": "string", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "b2-fetch-logs",
+      "name": "Fetch B2 Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [1120, 192],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://b2-magnet-downloader.bluepebble-345273df.northeurope.azurecontainerapps.io/logs/{{ $(\"Start B2 Download\").item.json.job_id }}",
+        "authentication": "none",
+        "options": {}
+      }
+    },
+    {
+      "id": "b2-failed-form",
+      "name": "B2 Failed Form",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [1344, 192],
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "showText",
+        "responseText": "=<h1>Download Failed</h1>\n<p><strong>Message:</strong> {{ $(\"Check B2 Status\").item.json.message }}</p>\n<p><strong>Job ID:</strong> {{ $(\"Check B2 Status\").item.json.job_id }}</p>\n<h2>Logs</h2>\n<ul>\n{{ $json.logs.map(log => \"<li>\" + log.timestamp + \" - \" + log.message + \"</li>\").join(\"\\n\") }}\n</ul>"
+      },
+      "webhookId": "b2-failed-form-webhook"
+    },
+    {
+      "id": "b2-wait-retry",
+      "name": "Wait Before Retry",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1120, 368],
+      "parameters": { "resume": "timeInterval", "amount": 15, "unit": "seconds" },
+      "webhookId": "b2-wait-retry-webhook"
+    }
+  ],
+  "connections": {
+    "Form Trigger": { "main": [[{ "node": "Start B2 Download", "type": "main", "index": 0 }]] },
+    "Start B2 Download": { "main": [[{ "node": "Check B2 Status", "type": "main", "index": 0 }]] },
+    "Check B2 Status": { "main": [[{ "node": "Is Completed", "type": "main", "index": 0 }]] },
+    "Is Completed": {
+      "main": [
+        [{ "node": "B2 Success Form", "type": "main", "index": 0 }],
+        [{ "node": "Is Failed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is Failed": {
+      "main": [
+        [{ "node": "Fetch B2 Logs", "type": "main", "index": 0 }],
+        [{ "node": "Wait Before Retry", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch B2 Logs": { "main": [[{ "node": "B2 Failed Form", "type": "main", "index": 0 }]] },
+    "Wait Before Retry": { "main": [[{ "node": "Check B2 Status", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

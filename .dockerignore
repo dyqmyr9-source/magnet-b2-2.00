@@ -1,0 +1,10 @@
+.env
+.env.*
+.git
+.gitignore
+downloads
+logs
+__pycache__
+*.pyc
+n8n-workflow-b2.json
+README.md
